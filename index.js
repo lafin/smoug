@@ -18,7 +18,6 @@ const clientID = ""
 const secondLogin = ""
 const secondPass = ""
 
-
 function pr(options) {
   return new Promise(
     function(resolve, reject) {
@@ -34,6 +33,12 @@ function pr(options) {
           }
         });
     });
+}
+
+function delay(ms) {
+  return new Promise(function(resolve, reject) {
+    setTimeout(resolve, ms);
+  });
 }
 
 function doAuthSecond() {
@@ -62,6 +67,12 @@ function doAuthSecond() {
           jar: jarSecond
         })
         .then((data) => {
+          let urlStr = data.body.match(/<form method=\"post\" action=\"(.*?)\">/mi)
+          if (urlStr && urlStr.length) {
+            urlStr = urlStr[1]
+            console.log(urlStr)
+          }
+
           let href = data.response.request.href
           let token = href.match(/access_token=(.*?)&/mi)
           if (token && token.length) {
@@ -69,9 +80,6 @@ function doAuthSecond() {
           } else {
             throw new Error("getting a token")
           }
-        })
-        .catch(error => {
-          console.log("error", error)
         })
     })
     .catch(error => {
@@ -127,80 +135,71 @@ function doAuthOne(captchaUrl) {
     })
 }
 
-function getGroupInfo(groupName, callback) {
-  let options = {
+function getGroupInfo(groupName) {
+  console.log("info:", groupName)
+  return pr({
     url: secondApiUrl + "/method/groups.getById?&group_id=" + groupName + "&fields=&v=" + secondApiVersion,
     jar: jarSecond,
     json: true
-  }
-  return request(options, (error, response, body) => {
-    return callback(body)
   })
 }
 
-function doJoinVk(groupID, token, callback) {
-  let options = {
+function doJoinVk(groupID, token) {
+  console.log("join:", groupID, token)
+  return pr({
     url: secondApiUrl + "/method/groups.join?&group_id=" + groupID + "&access_token=" + token + "&v=" + secondApiVersion,
     jar: jarSecond,
     json: true
-  }
-  console.log("join:", groupID)
-  return request(options, (error, response, body) => {
-    return callback(body)
   })
 }
 
-function doLeaveVk(groupID, token, callback) {
-  let options = {
+function doLeaveVk(groupID, token) {
+  console.log("leave:", groupID, token)
+  return pr({
     url: secondApiUrl + "/method/groups.leave?&group_id=" + groupID + "&access_token=" + token + "&v=" + secondApiVersion,
     jar: jarSecond,
     json: true
-  }
-  console.log("leave:", groupID)
-  return request(options, (error, response, body) => {
-    return callback(body)
   })
 }
 
-function doRepost(idGroup, nameGroup, token) {
-  options = {
-    url: firstUrl + "system/modules/vk/process.php",
-    method: "post",
-    form: {
-      get: 1,
-      url: nameGroup,
-      pid: idGroup
-    },
-    jar: jarOne
-  }
+function doRepost(value) {
+  let groupID
+  [idGroup, nameGroup, token] = [...value]
 
-  return request(options, (error, response, body) => {
-    console.log('step 1:', body)
-
-    setTimeout(() => {
-      getGroupInfo(nameGroup, body => {
-        if (body && body.response && body.response.length) {
-          let groupID = body.response[0].id
-          doJoinVk(groupID, token, body => {
-            console.log(body)
-
-            setTimeout(() => {
-              options.form = {
-                id: idGroup
-              }
-              return request(options, (error, response, body) => {
-                console.log('step 2:', body)
-
-                doLeaveVk(groupID, token, body => {
-                  console.log(body)
-                })
-              })
-            }, 10e3)
-          })
-        }
+  return pr({
+      url: firstUrl + "system/modules/vk/process.php",
+      method: "post",
+      form: {
+        get: 1,
+        url: nameGroup,
+        pid: idGroup
+      },
+      jar: jarOne
+    })
+    .then((data) => {
+      return getGroupInfo(nameGroup)
+    })
+    .then((data) => {
+      groupID = data.body.response[0].id
+      return doJoinVk(groupID, token)
+    })
+    .then((data) => {
+      return pr({
+        url: firstUrl + "system/modules/vk/process.php",
+        method: "post",
+        form: {
+          id: idGroup
+        },
+        jar: jarOne
       })
-    }, 1e3)
-  })
+    })
+    .then((data) => {
+      return delay(10e3)
+        .then(doLeaveVk(groupID, token))
+    })
+    .catch(error => {
+      console.log("error", error)
+    })
 }
 
 function doStepSecond(token) {
@@ -213,14 +212,13 @@ function doStepSecond(token) {
       let values = []
       let value
       while ((value = re.exec(data.body)) !== null) {
-        values = values.concat([value[1], value[2], token]);
+        values[values.length] = [value[1], value[2], token]
       }
       return values
     })
     .catch(error => {
       console.log("error", error)
     })
-
 }
 
 pr({
@@ -242,7 +240,7 @@ pr({
     return doStepSecond(token)
   })
   .then(values => {
-    console.log(values)
+    return Promise.all(values.map(doRepost))
   })
   .catch(error => {
     console.log("error", error)
