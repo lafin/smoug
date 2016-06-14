@@ -19,6 +19,11 @@ const secondLogin = ""
 const secondPass = ""
 
 function pr(options) {
+  options = Object.assign({}, options, {
+    headers: {
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.84 Safari/537.36"
+    }
+  })
   return new Promise(
     function(resolve, reject) {
       request(options,
@@ -69,8 +74,7 @@ function doAuthSecond() {
         .then((data) => {
           let urlStr = data.body.match(/<form method=\"post\" action=\"(.*?)\">/mi)
           if (urlStr && urlStr.length) {
-            urlStr = urlStr[1]
-            console.log(urlStr)
+            console.log(urlStr[1])
           }
 
           let href = data.response.request.href
@@ -81,9 +85,6 @@ function doAuthSecond() {
             throw new Error("getting a token")
           }
         })
-    })
-    .catch(error => {
-      console.log("error", error)
     })
 }
 
@@ -101,8 +102,7 @@ function doAuthOne(captchaUrl) {
         input: process.stdin,
         output: process.stdout
       })
-      return rl.question("captcha? ", (answer) => {
-        let captcha = answer
+      return rl.question("captcha? ", (captcha) => {
         rl.close()
 
         return pr({
@@ -125,13 +125,7 @@ function doAuthOne(captchaUrl) {
               return doStepSecond()
             }
           })
-          .catch(error => {
-            console.log("error", error)
-          })
       })
-    })
-    .catch(error => {
-      console.log("error", error)
     })
 }
 
@@ -144,27 +138,30 @@ function getGroupInfo(groupName) {
   })
 }
 
-function doJoinVk(groupID, token) {
-  console.log("join:", groupID, token)
+function doJoinVk(groupId, token) {
+  console.log("join:", groupId)
   return pr({
-    url: secondApiUrl + "/method/groups.join?&group_id=" + groupID + "&access_token=" + token + "&v=" + secondApiVersion,
+    url: secondApiUrl + "/method/groups.join?&group_id=" + groupId + "&access_token=" + token + "&v=" + secondApiVersion,
     jar: jarSecond,
     json: true
   })
 }
 
-function doLeaveVk(groupID, token) {
-  console.log("leave:", groupID, token)
+function doLeaveVk(groupId, token) {
+  console.log("leave:", groupId)
   return pr({
-    url: secondApiUrl + "/method/groups.leave?&group_id=" + groupID + "&access_token=" + token + "&v=" + secondApiVersion,
+    url: secondApiUrl + "/method/groups.leave?&group_id=" + groupId + "&access_token=" + token + "&v=" + secondApiVersion,
     jar: jarSecond,
     json: true
   })
 }
 
 function doRepost(value) {
-  let groupID
-  [idGroup, nameGroup, token] = [...value]
+  let groupId
+
+  let pid = value[0]
+  let nameGroup = value[1]
+  let token = value[2]
 
   return pr({
       url: firstUrl + "system/modules/vk/process.php",
@@ -172,33 +169,40 @@ function doRepost(value) {
       form: {
         get: 1,
         url: nameGroup,
-        pid: idGroup
+        pid: pid
       },
       jar: jarOne
     })
     .then((data) => {
+      console.log(data.body, nameGroup, pid)
       return getGroupInfo(nameGroup)
     })
     .then((data) => {
-      groupID = data.body.response[0].id
-      return doJoinVk(groupID, token)
+      return delay(5e3)
+        .then(() => {
+          if (data.body && data.body.response && data.body.response.length) {
+            groupId = data.body.response[0].id
+            return doJoinVk(groupId, token)
+          } else {
+            console.log(data.body)
+            throw new Error()
+          }
+        })
     })
     .then((data) => {
       return pr({
         url: firstUrl + "system/modules/vk/process.php",
         method: "post",
         form: {
-          id: idGroup
+          id: pid
         },
         jar: jarOne
       })
     })
     .then((data) => {
-      return delay(10e3)
-        .then(doLeaveVk(groupID, token))
-    })
-    .catch(error => {
-      console.log("error", error)
+      console.log(data.body, pid)
+      return delay(5e3)
+        .then(doLeaveVk(groupId, token))
     })
 }
 
@@ -215,9 +219,6 @@ function doStepSecond(token) {
         values[values.length] = [value[1], value[2], token]
       }
       return values
-    })
-    .catch(error => {
-      console.log("error", error)
     })
 }
 
@@ -243,5 +244,6 @@ pr({
     return Promise.all(values.map(doRepost))
   })
   .catch(error => {
-    console.log("error", error)
+    console.error(error)
+    return
   })
