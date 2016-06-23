@@ -8,15 +8,10 @@ const jarOne = request.jar(new FileCookieStore("jarOne.json"))
 const jarSecond = request.jar()
 
 const firstUrl = "https://smofast.com/"
-const firstLogin = ""
-const firstPass = ""
 
 const secondAuthUrl = "https://oauth.vk.com"
 const secondApiUrl = "https://api.vk.com"
 const secondApiVersion = "5.50"
-const clientID = ""
-const secondLogin = ""
-const secondPass = ""
 
 function pr(options) {
   options = Object.assign({}, options, {
@@ -25,7 +20,7 @@ function pr(options) {
     }
   })
   return new Promise(
-    function(resolve, reject) {
+    (resolve, reject) => {
       request(options,
         (error, response, body) => {
           if (error) {
@@ -47,6 +42,8 @@ function delay(ms) {
 }
 
 function doAuthSecond() {
+  console.log("doAuthSecond")
+
   return pr({
       url: secondAuthUrl + "/authorize?client_id=" + clientID + "&redirect_uri=" + secondAuthUrl + "/blank.html&display=mobile&scope=wall,groups&v=&response_type=token&v=" + secondApiVersion,
       jar: jarSecond
@@ -89,11 +86,21 @@ function doAuthSecond() {
 }
 
 function doAuthOne(captchaUrl) {
-  return pr({
-      url: captchaUrl,
-      jar: jarOne
+  console.log("doAuthOne")
+
+  return new Promise((resolve, reject) => {
+      return request({
+          url: captchaUrl,
+          jar: jarOne
+        })
+        .on('end', (response) => {
+          return resolve()
+        })
+        .on('error', (error) => {
+          return reject(error)
+        })
+        .pipe(fs.createWriteStream("/tmp/captcha.png"))
     })
-    .then(fs.createWriteStream("/tmp/captcha.png"))
     .then(() => {
       setTimeout(() => spawn("open", ["/tmp/captcha.png"]), 2e3)
     })
@@ -103,8 +110,6 @@ function doAuthOne(captchaUrl) {
         output: process.stdout
       })
       return rl.question("captcha? ", (captcha) => {
-        rl.close()
-
         return pr({
             url: firstUrl,
             method: "post",
@@ -125,73 +130,72 @@ function doAuthOne(captchaUrl) {
               return doStepSecond()
             }
           })
+          .then(() => rl.close())
       })
     })
 }
 
-function getGroupInfo(groupName) {
-  console.log("info:", groupName)
+function doLikeVk(specilaId, token) {
+  console.log("doLikeVk:", specilaId)
+
+  let [
+    type,
+    ownerId,
+    itemId
+  ] = getItemData(specilaId)
+
   return pr({
-    url: secondApiUrl + "/method/groups.getById?&group_id=" + groupName + "&fields=&v=" + secondApiVersion,
+    url: secondApiUrl + "/method/likes.add?type=" + type + "&item_id=" + itemId + "&owner_id=" + ownerId + "&access_token=" + token + "&v=" + secondApiVersion,
     jar: jarSecond,
     json: true
   })
 }
 
-function doJoinVk(groupId, token) {
-  console.log("join:", groupId)
+function doDislikeVk(specilaId, token) {
+  console.log("doDislikeVk:", specilaId)
+
+  let [
+    type,
+    ownerId,
+    itemId
+  ] = getItemData(specilaId)
+
   return pr({
-    url: secondApiUrl + "/method/groups.join?&group_id=" + groupId + "&access_token=" + token + "&v=" + secondApiVersion,
+    url: secondApiUrl + "/method/likes.delete?type=" + type + "&item_id=" + itemId + "&owner_id=" + ownerId + "&access_token=" + token + "&v=" + secondApiVersion,
     jar: jarSecond,
     json: true
   })
 }
 
-function doLeaveVk(groupId, token) {
-  console.log("leave:", groupId)
-  return pr({
-    url: secondApiUrl + "/method/groups.leave?&group_id=" + groupId + "&access_token=" + token + "&v=" + secondApiVersion,
-    jar: jarSecond,
-    json: true
-  })
-}
+function doAction(value) {
+  console.log("doAction")
 
-function doRepost(value) {
   let groupId
-
-  let pid = value[0]
-  let nameGroup = value[1]
-  let token = value[2]
+  let [
+    pid,
+    specilaId,
+    token
+  ] = [...value]
 
   return pr({
-      url: firstUrl + "system/modules/vk/process.php",
+      url: firstUrl + "system/modules/vk_like/process.php",
       method: "post",
       form: {
         get: 1,
-        url: nameGroup,
+        url: specilaId,
         pid: pid
       },
       jar: jarOne
     })
     .then((data) => {
-      console.log(data.body, nameGroup, pid)
-      return getGroupInfo(nameGroup)
+      return delay(5e3).then(doLikeVk(specilaId, token))
     })
     .then((data) => {
-      return delay(5e3)
-        .then(() => {
-          if (data.body && data.body.response && data.body.response.length) {
-            groupId = data.body.response[0].id
-            return doJoinVk(groupId, token)
-          } else {
-            console.log(data.body)
-            throw new Error()
-          }
-        })
+      return console.log(data.body, pid)
     })
     .then((data) => {
       return pr({
-        url: firstUrl + "system/modules/vk/process.php",
+        url: firstUrl + "system/modules/vk_like/process.php",
         method: "post",
         form: {
           id: pid
@@ -200,15 +204,15 @@ function doRepost(value) {
       })
     })
     .then((data) => {
-      console.log(data.body, pid)
-      return delay(5e3)
-        .then(doLeaveVk(groupId, token))
+      return delay(5e3).then(doDislikeVk(specilaId, token))
     })
 }
 
 function doStepSecond(token) {
+  console.log("doStepSecond")
+
   return pr({
-      url: firstUrl + "p.php?p=vk",
+      url: firstUrl + "p.php?p=vk_like",
       jar: jarOne
     })
     .then((data) => {
@@ -222,6 +226,25 @@ function doStepSecond(token) {
     })
 }
 
+function getItemData(id) {
+  let patters = id.match(/^([a-z]+)\-?(\d+)_(\d+)$/mi)
+  let [
+    _,
+    type,
+    ownerId,
+    itemId
+  ] = [...patters]
+
+  if (type === 'wall') {
+    type = 'post'
+  }
+  return [
+    type,
+    ownerId,
+    itemId
+  ]
+}
+
 pr({
     url: firstUrl,
     jar: jarOne
@@ -233,6 +256,7 @@ pr({
       console.log("captcha url:", captchaUrl)
       return doAuthOne(captchaUrl)
     }
+    return
   })
   .then(data => {
     return doAuthSecond()
@@ -241,7 +265,7 @@ pr({
     return doStepSecond(token)
   })
   .then(values => {
-    return Promise.all(values.map(doRepost))
+    return values.slice(0, 3).forEach(doAction)
   })
   .catch(error => {
     console.error(error)
