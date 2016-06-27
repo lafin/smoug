@@ -188,10 +188,29 @@ function doAction(value) {
       jar: jarOne
     })
     .then((data) => {
-      return delay(5e3).then(doLikeVk(specilaId, token))
+      return delay(5e3).then(_ => doLikeVk(specilaId, token))
     })
     .then((data) => {
-      return console.log(data.body, pid)
+      if (data.body.error && data.body.error.error_code === 100) {
+        return pr({
+            url: firstUrl + "system/modules/vk_like/process.php",
+            method: "post",
+            form: {
+              step: "skip",
+              sid: pid
+            },
+            jar: jarOne
+          })
+          .then(_ => {
+            console.log(pid, "skip")
+            throw new Error()
+          })
+      } else if (data.body.error) {
+        console.log(pid, "captcha")
+        throw new Error()
+      } else {
+        return
+      }
     })
     .then((data) => {
       return pr({
@@ -204,7 +223,7 @@ function doAction(value) {
       })
     })
     .then((data) => {
-      return delay(5e3).then(doDislikeVk(specilaId, token))
+      return delay(5e3).then(_ => doDislikeVk(specilaId, token))
     })
 }
 
@@ -265,7 +284,7 @@ pr({
     return doStepSecond(token)
   })
   .then(values => {
-    return values.slice(0, 3).forEach(doAction)
+    return values.forEach(doAction)
   })
   .catch(error => {
     console.error(error)
