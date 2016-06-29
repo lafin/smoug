@@ -8,10 +8,11 @@ const jarOne = request.jar(new FileCookieStore("jarOne.json"))
 const jarSecond = request.jar()
 
 const firstUrl = "https://smofast.com/"
-
 const secondAuthUrl = "https://oauth.vk.com"
 const secondApiUrl = "https://api.vk.com"
-const secondApiVersion = "5.50"
+const secondApiVersion = "5.52"
+
+
 
 function pr(options) {
   options = Object.assign({}, options, {
@@ -188,42 +189,58 @@ function doAction(value) {
       jar: jarOne
     })
     .then((data) => {
-      return delay(5e3).then(_ => doLikeVk(specilaId, token))
+      return doLikeVk(specilaId, token)
     })
     .then((data) => {
-      if (data.body.error && data.body.error.error_code === 100) {
-        return pr({
-            url: firstUrl + "system/modules/vk_like/process.php",
-            method: "post",
-            form: {
-              step: "skip",
-              sid: pid
-            },
-            jar: jarOne
-          })
-          .then(_ => {
-            console.log(pid, "skip")
-            throw new Error()
-          })
-      } else if (data.body.error) {
-        console.log(pid, "captcha")
-        throw new Error()
+      if (data.body.error) {
+        if (data.body.error.error_code === 100) {
+          return pr({
+              url: firstUrl + "system/modules/vk_like/process.php",
+              method: "post",
+              form: {
+                step: "skip",
+                sid: pid
+              },
+              jar: jarOne
+            })
+            .then(_ => {
+              console.log(pid, "skip")
+              throw new Error()
+            })
+        } else if (data.body.error.error_code === 14) {
+          console.log(pid, "captcha")
+          throw new Error()
+        } else {
+          console.log(pid, data.body.error.error_msg)
+          throw new Error()
+        }
       } else {
         return
       }
     })
     .then((data) => {
-      return pr({
-        url: firstUrl + "system/modules/vk_like/process.php",
-        method: "post",
-        form: {
-          id: pid
-        },
-        jar: jarOne
-      })
-    })
-    .then((data) => {
-      return delay(5e3).then(_ => doDislikeVk(specilaId, token))
+      let attempt = 0
+      let timer = setInterval(_ => {
+        pr({
+            url: firstUrl + "system/modules/vk_like/process.php",
+            method: "post",
+            form: {
+              id: pid
+            },
+            jar: jarOne
+          })
+          .then((data) => {
+            if (data.body === "1" || attempt === 3) {
+              clearInterval(timer)
+              return delay(1e3).then(_ => doDislikeVk(specilaId, token))
+            }
+            attempt++
+            console.log("try again", pid)
+            return
+          })
+
+      }, 5e3)
+      return
     })
 }
 
