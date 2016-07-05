@@ -179,6 +179,22 @@ function doDislikeVk(specilaId, token) {
   })
 }
 
+function doSkip(specilaId, pid) {
+  return pr({
+      url: firstUrl + "system/modules/vk_like/process.php",
+      method: "post",
+      form: {
+        step: "skip",
+        sid: pid
+      },
+      jar: jarOne
+    })
+    .then(_ => {
+      console.log(specilaId, "skip")
+      return
+    })
+}
+
 function doAction(value, done) {
   let groupId
   let [
@@ -205,19 +221,7 @@ function doAction(value, done) {
     .then((data) => {
       if (data.body.error) {
         if (data.body.error.error_code === 100) {
-          return pr({
-              url: firstUrl + "system/modules/vk_like/process.php",
-              method: "post",
-              form: {
-                step: "skip",
-                sid: pid
-              },
-              jar: jarOne
-            })
-            .then(_ => {
-              console.log(specilaId, "skip")
-              throw new Error()
-            })
+          return doSkip(specilaId, pid)
         } else if (data.body.error.error_code === 14) {
           console.log(specilaId, "captcha")
           throw new Error()
@@ -242,10 +246,11 @@ function doAction(value, done) {
               jar: jarOne
             })
             .then((data) => {
-              if (attempt === 3) {
+              if (attempt === 6) {
                 console.log(specilaId, "attempt over")
                 clearInterval(timer)
-                return resolve()
+                return doSkip(specilaId, pid)
+                  .then(resolve)
               }
               if (data.body === "1") {
                 clearInterval(timer)
@@ -257,7 +262,7 @@ function doAction(value, done) {
               console.log(specilaId, "try again")
               return
             })
-        }, 5e3)
+        }, 3e3)
       })
     })
     .then(_ => done(null))
