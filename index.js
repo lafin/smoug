@@ -283,7 +283,7 @@ function doStepSecond(token) {
 }
 
 function getItemData(id) {
-  let patters = id.match(/^([a-z]+)\-?(\d+)_(\d+)$/mi)
+  let patters = id.match(/^([a-z]+)(\-?\d+)_(\d+)$/mi)
   let [
     _,
     type,
