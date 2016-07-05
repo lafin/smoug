@@ -270,7 +270,7 @@ function doAction(value, done) {
 }
 
 function doStepSecond(token) {
-  console.log("doStepSecond")
+  console.log("\n>>> doStepSecond")
 
   return pr({
       url: firstUrl + "p.php?p=vk_like",
@@ -323,11 +323,21 @@ pr({
     return doAuthSecond()
   })
   .then(token => {
-    return doStepSecond(token)
-  })
-  .then(values => {
-    return async.mapSeries(values, (value, callback) => {
-      return doAction(value, callback)
+    return new Promise((resolve, reject) => {
+      let count = 0
+      async.timesSeries(2, (n, next) => {
+        doStepSecond(token)
+          .then(values => {
+            return new Promise((resolve, reject) => {
+              async.mapSeries(values, (value, callback) => {
+                return doAction(value, callback)
+              }, resolve)
+            })
+          })
+          .then(_ => {
+            next()
+          })
+      }, resolve)
     })
   })
   .catch(error => {

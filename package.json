@@ -1,14 +1,15 @@
 {
-  "name": "smohack",
+  "name": "smoug",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "",
-  "license": "ISC",
+  "author": "lafin <kuvakin@gmail.com>",
+  "license": "MIT",
   "dependencies": {
+    "async": "^2.0.0-rc.6",
     "request": "^2.72.0",
     "tough-cookie-filestore": "0.0.1"
   }
