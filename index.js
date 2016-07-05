@@ -1,4 +1,5 @@
 const request = require("request")
+const async = require("async")
 const fs = require("fs")
 const readline = require("readline");
 const spawn = require("child_process").spawn
@@ -17,7 +18,7 @@ const secondApiVersion = "5.52"
 function pr(options) {
   options = Object.assign({}, options, {
     headers: {
-      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.84 Safari/537.36"
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36"
     }
   })
   return new Promise(
@@ -72,18 +73,28 @@ function doAuthSecond() {
         .then((data) => {
           let urlStr = data.body.match(/<form method=\"post\" action=\"(.*?)\">/mi)
           if (urlStr && urlStr.length) {
-            console.log(urlStr[1])
-          }
-
-          let href = data.response.request.href
-          let token = href.match(/access_token=(.*?)&/mi)
-          if (token && token.length) {
-            return token[1]
+            return pr({
+                url: urlStr[1],
+                jar: jarSecond
+              })
+              .then((data) => {
+                return getAccessToken(data.response)
+              })
           } else {
-            throw new Error("getting a token")
+            return getAccessToken(data.response)
           }
         })
     })
+}
+
+function getAccessToken(response) {
+  let href = response.request.href
+  let token = href.match(/access_token=(.*?)&/mi)
+  if (token && token.length) {
+    return token[1]
+  } else {
+    throw new Error("getting a token")
+  }
 }
 
 function doAuthOne(captchaUrl) {
@@ -137,7 +148,7 @@ function doAuthOne(captchaUrl) {
 }
 
 function doLikeVk(specilaId, token) {
-  console.log("doLikeVk:", specilaId)
+  console.log(specilaId, "doLikeVk")
 
   let [
     type,
@@ -153,7 +164,7 @@ function doLikeVk(specilaId, token) {
 }
 
 function doDislikeVk(specilaId, token) {
-  console.log("doDislikeVk:", specilaId)
+  console.log(specilaId, "doDislikeVk")
 
   let [
     type,
@@ -168,15 +179,15 @@ function doDislikeVk(specilaId, token) {
   })
 }
 
-function doAction(value) {
-  console.log("doAction")
-
+function doAction(value, done) {
   let groupId
   let [
     pid,
     specilaId,
     token
   ] = [...value]
+
+  console.log("\n" + specilaId, "doAction")
 
   return pr({
       url: firstUrl + "system/modules/vk_like/process.php",
@@ -204,14 +215,14 @@ function doAction(value) {
               jar: jarOne
             })
             .then(_ => {
-              console.log(pid, "skip")
+              console.log(specilaId, "skip")
               throw new Error()
             })
         } else if (data.body.error.error_code === 14) {
-          console.log(pid, "captcha")
+          console.log(specilaId, "captcha")
           throw new Error()
         } else {
-          console.log(pid, data.body.error.error_msg)
+          console.log(specilaId, data.body.error.error_msg)
           throw new Error()
         }
       } else {
@@ -220,28 +231,37 @@ function doAction(value) {
     })
     .then((data) => {
       let attempt = 0
-      let timer = setInterval(_ => {
-        pr({
-            url: firstUrl + "system/modules/vk_like/process.php",
-            method: "post",
-            form: {
-              id: pid
-            },
-            jar: jarOne
-          })
-          .then((data) => {
-            if (data.body === "1" || attempt === 3) {
-              clearInterval(timer)
-              return delay(1e3).then(_ => doDislikeVk(specilaId, token))
-            }
-            attempt++
-            console.log("try again", pid)
-            return
-          })
-
-      }, 5e3)
-      return
+      return new Promise((resolve, reject) => {
+        let timer = setInterval(_ => {
+          pr({
+              url: firstUrl + "system/modules/vk_like/process.php",
+              method: "post",
+              form: {
+                id: pid
+              },
+              jar: jarOne
+            })
+            .then((data) => {
+              if (attempt === 3) {
+                console.log(specilaId, "attempt over")
+                clearInterval(timer)
+                return resolve()
+              }
+              if (data.body === "1") {
+                clearInterval(timer)
+                return delay(1e3)
+                  .then(_ => doDislikeVk(specilaId, token))
+                  .then(resolve)
+              }
+              attempt++
+              console.log(specilaId, "try again")
+              return
+            })
+        }, 5e3)
+      })
     })
+    .then(_ => done(null))
+    .catch(_ => done(null))
 }
 
 function doStepSecond(token) {
@@ -301,7 +321,9 @@ pr({
     return doStepSecond(token)
   })
   .then(values => {
-    return values.forEach(doAction)
+    return async.mapSeries(values, (value, callback) => {
+      return doAction(value, callback)
+    })
   })
   .catch(error => {
     console.error(error)
