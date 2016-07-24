@@ -13,7 +13,21 @@ const secondAuthUrl = "https://oauth.vk.com"
 const secondApiUrl = "https://api.vk.com"
 const secondApiVersion = "5.52"
 
+const vars = ["SMO_LOGIN", "SMO_PASS", "VK_CLIENT_ID", "VK_LOGIN", "VK_PASS"]
+for (let i in vars) {
+  let key = vars[i]
+  if (!process.env.hasOwnProperty(key)) {
+    console.log("doesn't have enough environment variables", key)
+    process.exit(1)
+  }
+}
 
+const firstLogin = process.env.SMO_LOGIN
+const firstPass = process.env.SMO_PASS
+const clientID = process.env.VK_CLIENT_ID
+const secondLogin = process.env.VK_LOGIN
+const secondPass = process.env.VK_PASS
+const countCicle = process.env.COUNT_CICLE || 1
 
 function pr(options) {
   options = Object.assign({}, options, {
@@ -50,7 +64,7 @@ function doAuthSecond() {
       url: secondAuthUrl + "/authorize?client_id=" + clientID + "&redirect_uri=" + secondAuthUrl + "/blank.html&display=mobile&scope=wall,groups&v=&response_type=token&v=" + secondApiVersion,
       jar: jarSecond
     })
-    .then((data) => {
+    .then(data => {
       let urlStr = data.body.match(/<form method=\"post\" action=\"(.*?)\">/mi)
       urlStr = urlStr[1]
       console.log(urlStr);
@@ -70,14 +84,14 @@ function doAuthSecond() {
           form: formData,
           jar: jarSecond
         })
-        .then((data) => {
+        .then(data => {
           let urlStr = data.body.match(/<form method=\"post\" action=\"(.*?)\">/mi)
           if (urlStr && urlStr.length) {
             return pr({
                 url: urlStr[1],
                 jar: jarSecond
               })
-              .then((data) => {
+              .then(data => {
                 return getAccessToken(data.response)
               })
           } else {
@@ -134,7 +148,7 @@ function doAuthOne(captchaUrl) {
             },
             jar: jarOne
           })
-          .then((data) => {
+          .then(data => {
             error = /Ошибка/.test(data.body)
             if (error) {
               throw new Error()
@@ -147,7 +161,23 @@ function doAuthOne(captchaUrl) {
     })
 }
 
-function doLikeVk(specilaId, token) {
+function validateLikeVk(data, specilaId, pid) {
+  if (data.body.error) {
+    if (data.body.error.error_code === 100) {
+      return doSkip(specilaId, pid)
+    } else if (data.body.error.error_code === 14) {
+      console.log(specilaId, "captcha")
+      throw new Error()
+    } else {
+      console.log(specilaId, data.body.error.error_msg)
+      throw new Error()
+    }
+  } else {
+    return
+  }
+}
+
+function doLikeVk(specilaId, token, pid) {
   console.log(specilaId, "doLikeVk")
 
   let [
@@ -157,13 +187,16 @@ function doLikeVk(specilaId, token) {
   ] = getItemData(specilaId)
 
   return pr({
-    url: secondApiUrl + "/method/likes.add?type=" + type + "&item_id=" + itemId + "&owner_id=" + ownerId + "&access_token=" + token + "&v=" + secondApiVersion,
-    jar: jarSecond,
-    json: true
-  })
+      url: secondApiUrl + "/method/likes.add?type=" + type + "&item_id=" + itemId + "&owner_id=" + ownerId + "&access_token=" + token + "&v=" + secondApiVersion,
+      jar: jarSecond,
+      json: true
+    })
+    .then(data => {
+      return validateLikeVk(data, specilaId, pid)
+    })
 }
 
-function doDislikeVk(specilaId, token) {
+function doDislikeVk(specilaId, token, pid) {
   console.log(specilaId, "doDislikeVk")
 
   let [
@@ -173,10 +206,13 @@ function doDislikeVk(specilaId, token) {
   ] = getItemData(specilaId)
 
   return pr({
-    url: secondApiUrl + "/method/likes.delete?type=" + type + "&item_id=" + itemId + "&owner_id=" + ownerId + "&access_token=" + token + "&v=" + secondApiVersion,
-    jar: jarSecond,
-    json: true
-  })
+      url: secondApiUrl + "/method/likes.delete?type=" + type + "&item_id=" + itemId + "&owner_id=" + ownerId + "&access_token=" + token + "&v=" + secondApiVersion,
+      jar: jarSecond,
+      json: true
+    })
+    .then(data => {
+      return validateLikeVk(data, specilaId, pid)
+    })
 }
 
 function doSkip(specilaId, pid) {
@@ -215,25 +251,8 @@ function doAction(value, done) {
       },
       jar: jarOne
     })
-    .then((data) => {
-      return doLikeVk(specilaId, token)
-    })
-    .then((data) => {
-      if (data.body.error) {
-        if (data.body.error.error_code === 100) {
-          return doSkip(specilaId, pid)
-        } else if (data.body.error.error_code === 14) {
-          console.log(specilaId, "captcha")
-          throw new Error()
-        } else {
-          console.log(specilaId, data.body.error.error_msg)
-          throw new Error()
-        }
-      } else {
-        return
-      }
-    })
-    .then((data) => {
+    .then(_ => doLikeVk(specilaId, token, pid))
+    .then(_ => {
       let attempt = 0
       return new Promise((resolve, reject) => {
         let timer = setInterval(_ => {
@@ -245,17 +264,18 @@ function doAction(value, done) {
               },
               jar: jarOne
             })
-            .then((data) => {
+            .then(data => {
               if (attempt === 6) {
                 console.log(specilaId, "attempt over")
                 clearInterval(timer)
                 return doSkip(specilaId, pid)
+                  .then(_ => doDislikeVk(specilaId, token, pid))
                   .then(resolve)
               }
               if (data.body === "1") {
                 clearInterval(timer)
                 return delay(1e3)
-                  .then(_ => doDislikeVk(specilaId, token))
+                  .then(_ => doDislikeVk(specilaId, token, pid))
                   .then(resolve)
               }
               attempt++
@@ -276,7 +296,7 @@ function doStepSecond(token) {
       url: firstUrl + "p.php?p=vk_like",
       jar: jarOne
     })
-    .then((data) => {
+    .then(data => {
       const re = /ModulePopup\('(.*?)','(.*?)',.*\);/gm
       let values = []
       let value
@@ -319,13 +339,12 @@ pr({
     }
     return
   })
-  .then(data => {
+  .then(_ => {
     return doAuthSecond()
   })
   .then(token => {
     return new Promise((resolve, reject) => {
-      let count = 0
-      async.timesSeries(2, (n, next) => {
+      async.timesSeries(countCicle, (n, next) => {
         doStepSecond(token)
           .then(values => {
             return new Promise((resolve, reject) => {
