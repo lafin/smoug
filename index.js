@@ -27,7 +27,7 @@ const firstPass = process.env.SMO_PASS
 const clientID = process.env.VK_CLIENT_ID
 const secondLogin = process.env.VK_LOGIN
 const secondPass = process.env.VK_PASS
-const countCicle = process.env.COUNT_CICLE || 1
+const countCicle = process.env.COUNT || 1
 
 function pr(options) {
   options = Object.assign({}, options, {
@@ -109,56 +109,6 @@ function getAccessToken(response) {
   } else {
     throw new Error("getting a token")
   }
-}
-
-function doAuthOne(captchaUrl) {
-  console.log("doAuthOne")
-
-  return new Promise((resolve, reject) => {
-      return request({
-          url: captchaUrl,
-          jar: jarOne
-        })
-        .on('end', (response) => {
-          return resolve()
-        })
-        .on('error', (error) => {
-          return reject(error)
-        })
-        .pipe(fs.createWriteStream("/tmp/captcha.png"))
-    })
-    .then(() => {
-      setTimeout(() => spawn("open", ["/tmp/captcha.png"]), 2e3)
-    })
-    .then(() => {
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout
-      })
-      return rl.question("captcha? ", (captcha) => {
-        return pr({
-            url: firstUrl,
-            method: "post",
-            form: {
-              login: firstLogin,
-              pass: firstPass,
-              captcha: captcha,
-              remember: "on",
-              connect: "Вход"
-            },
-            jar: jarOne
-          })
-          .then(data => {
-            error = /Ошибка/.test(data.body)
-            if (error) {
-              throw new Error()
-            } else {
-              return doStepSecond()
-            }
-          })
-          .then(() => rl.close())
-      })
-    })
 }
 
 function validateLikeVk(data, specilaId, pid) {
@@ -265,7 +215,7 @@ function doAction(value, done) {
               jar: jarOne
             })
             .then(data => {
-              if (attempt === 6) {
+              if (attempt === 3) {
                 console.log(specilaId, "attempt over")
                 clearInterval(timer)
                 return doSkip(specilaId, pid)
@@ -329,15 +279,6 @@ function getItemData(id) {
 pr({
     url: firstUrl,
     jar: jarOne
-  })
-  .then(data => {
-    let captchaUrl = data.body.match(/<img\s+src=\"(.*?)\"\s+alt=\"\"\/\>/mi)
-    captchaUrl = captchaUrl && (firstUrl + captchaUrl[1])
-    if (captchaUrl) {
-      console.log("captcha url:", captchaUrl)
-      return doAuthOne(captchaUrl)
-    }
-    return
   })
   .then(_ => {
     return doAuthSecond()

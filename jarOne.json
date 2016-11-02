@@ -1,0 +1,18 @@
+{
+  "smofast.com": {
+    "/": {
+      "PHPSESSID": {
+        "key": "PHPSESSID",
+        "value": "xxx",
+        "domain": "smofast.com",
+        "path": "/"
+      },
+      "Captcha": {
+        "key": "Captcha",
+        "value": "yyy",
+        "domain": "smofast.com",
+        "path": "/"
+      }
+    }
+  }
+}
