@@ -2,8 +2,5 @@
 ___
 
 ```
-$ git clone https://github.com/lafin/smoug.git
-$ cd smoug
-$ npm i
-$ SMO_LOGIN=<...> SMO_PASS=<...> VK_CLIENT_ID=<...> VK_LOGIN=<...> VK_PASS=<...> node index.js
+$ docker run -e "SMO_LOGIN=<...>" -e "SMO_PASS=<...>" -e "VK_CLIENT_ID=<...>" -e "VK_LOGIN=<...>" -e "VK_PASS=<...>" --rm lafin/smoug:x86_64
 ```

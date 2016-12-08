@@ -1,40 +1,35 @@
-const request = require("request")
-const async = require("async")
-const fs = require("fs")
-const readline = require("readline");
-const spawn = require("child_process").spawn
-const FileCookieStore = require("tough-cookie-filestore")
+const request = require('request');
+const async = require('async');
 
-const jarOne = request.jar(new FileCookieStore("jarOne.json"))
-const jarSecond = request.jar()
+const jarFirst = request.jar();
+const jarSecond = request.jar();
 
-const firstUrl = "https://smofast.com/"
-const secondAuthUrl = "https://oauth.vk.com"
-const secondApiUrl = "https://api.vk.com"
-const secondApiVersion = "5.52"
+const firstUrl = 'http://bosslike.ru/';
+const secondAuthUrl = 'https://oauth.vk.com';
+const secondApiUrl = 'https://api.vk.com';
+const secondApiVersion = '5.52';
 
-const vars = ["SMO_LOGIN", "SMO_PASS", "VK_CLIENT_ID", "VK_LOGIN", "VK_PASS"]
-for (let i in vars) {
-  let key = vars[i]
+const vars = ['SMO_LOGIN', 'SMO_PASS', 'VK_CLIENT_ID', 'VK_LOGIN', 'VK_PASS'];
+for (const i in vars) {
+  const key = vars[i];
   if (!process.env.hasOwnProperty(key)) {
-    console.log("doesn't have enough environment variables", key)
-    process.exit(1)
+    console.log("doesn't have enough environment variables", key);
+    process.exit(1);
   }
 }
 
-const firstLogin = process.env.SMO_LOGIN
-const firstPass = process.env.SMO_PASS
-const clientID = process.env.VK_CLIENT_ID
-const secondLogin = process.env.VK_LOGIN
-const secondPass = process.env.VK_PASS
-const countCicle = process.env.COUNT || 1
+const firstLogin = process.env.SMO_LOGIN;
+const firstPass = process.env.SMO_PASS;
+const clientID = process.env.VK_CLIENT_ID;
+const secondLogin = process.env.VK_LOGIN;
+const secondPass = process.env.VK_PASS;
+const countCicle = process.env.COUNT || 2;
 
 function pr(options) {
-  options = Object.assign({}, options, {
-    headers: {
-      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36"
-    }
-  })
+  const defaultHeaders = {
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_12_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/55.0.2883.75 Safari/537.36',
+  };
+  options.headers = Object.assign({}, options.headers, defaultHeaders) || defaultHeaders;
   return new Promise(
     (resolve, reject) => {
       request(options,
@@ -43,8 +38,8 @@ function pr(options) {
             reject(error);
           } else {
             resolve({
-              response: response,
-              body: body
+              response,
+              body,
             });
           }
         });
@@ -52,255 +47,302 @@ function pr(options) {
 }
 
 function delay(ms) {
-  return new Promise(function(resolve, reject) {
+  return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
 }
 
 function doAuthSecond() {
-  console.log("doAuthSecond")
+  console.log('doAuthSecond');
 
   return pr({
-      url: secondAuthUrl + "/authorize?client_id=" + clientID + "&redirect_uri=" + secondAuthUrl + "/blank.html&display=mobile&scope=wall,groups&v=&response_type=token&v=" + secondApiVersion,
-      jar: jarSecond
-    })
-    .then(data => {
-      let urlStr = data.body.match(/<form method=\"post\" action=\"(.*?)\">/mi)
-      urlStr = urlStr[1]
+    url: `${secondAuthUrl}/authorize?client_id=${clientID}&redirect_uri=${secondAuthUrl}/blank.html&display=mobile&scope=wall,groups&v=&response_type=token&v=${secondApiVersion}`,
+    jar: jarSecond,
+  })
+    .then((data) => {
+      let urlStr = data.body.match(/<form method="post" action="(.*?)">/mi);
+      urlStr = urlStr[1];
       console.log(urlStr);
 
-      const re = /<input type=\"hidden\" name=\"(.*?)\" value=\"(.*?)\"\s?\/?>/gm
-      let value
-      let formData = {}
+      const re = /<input type="hidden" name="(.*?)" value="(.*?)"\s?\/?>/gm;
+      let value;
+      const formData = {};
       while ((value = re.exec(data.body)) !== null) {
-        formData[value[1]] = value[2]
+        formData[value[1]] = value[2];
       }
-      formData["email"] = secondLogin
-      formData["pass"] = secondPass
+      formData.email = secondLogin;
+      formData.pass = secondPass;
 
       return pr({
-          url: urlStr,
-          method: "post",
-          form: formData,
-          jar: jarSecond
-        })
-        .then(data => {
-          let urlStr = data.body.match(/<form method=\"post\" action=\"(.*?)\">/mi)
+        url: urlStr,
+        method: 'post',
+        form: formData,
+        jar: jarSecond,
+      })
+        .then((data) => {
+          const urlStr = data.body.match(/<form method="post" action="(.*?)">/mi);
           if (urlStr && urlStr.length) {
             return pr({
-                url: urlStr[1],
-                jar: jarSecond
-              })
-              .then(data => {
-                return getAccessToken(data.response)
-              })
-          } else {
-            return getAccessToken(data.response)
+              url: urlStr[1],
+              jar: jarSecond,
+            })
+              .then(data => getAccessToken(data.response));
           }
-        })
-    })
+          return getAccessToken(data.response);
+        });
+    });
 }
 
 function getAccessToken(response) {
-  let href = response.request.href
-  let token = href.match(/access_token=(.*?)&/mi)
+  const href = response.request.href;
+  const token = href.match(/access_token=(.*?)&/mi);
   if (token && token.length) {
-    return token[1]
+    return token[1];
   } else {
-    throw new Error("getting a token")
+    throw new Error('getting a token');
   }
 }
 
-function validateLikeVk(data, specilaId, pid) {
+function validateLikeVk(data, value) {
   if (data.body.error) {
     if (data.body.error.error_code === 100) {
-      return doSkip(specilaId, pid)
+      return doSkip(value);
     } else if (data.body.error.error_code === 14) {
-      console.log(specilaId, "captcha")
-      throw new Error()
+      console.log(value.url, 'captcha');
+      throw new Error();
     } else {
-      console.log(specilaId, data.body.error.error_msg)
-      throw new Error()
+      console.log(value.url, data.body.error.error_msg);
+      throw new Error();
     }
   } else {
-    return
+
   }
 }
 
-function doLikeVk(specilaId, token, pid) {
-  console.log(specilaId, "doLikeVk")
+function doLikeVk(value) {
+  console.log(value.url, 'doLikeVk');
 
   let [
     type,
     ownerId,
-    itemId
-  ] = getItemData(specilaId)
+    itemId,
+  ] = getItemData(value.url);
 
   return pr({
-      url: secondApiUrl + "/method/likes.add?type=" + type + "&item_id=" + itemId + "&owner_id=" + ownerId + "&access_token=" + token + "&v=" + secondApiVersion,
-      jar: jarSecond,
-      json: true
-    })
-    .then(data => {
-      return validateLikeVk(data, specilaId, pid)
-    })
+    url: `${secondApiUrl}/method/likes.add?type=${type}&item_id=${itemId}&owner_id=${ownerId}&access_token=${value.token}&v=${secondApiVersion}`,
+    jar: jarSecond,
+    json: true,
+  })
+    .then(data => validateLikeVk(data, value));
 }
 
-function doDislikeVk(specilaId, token, pid) {
-  console.log(specilaId, "doDislikeVk")
+function doDislikeVk(value) {
+  console.log(value.url, 'doDislikeVk');
 
   let [
     type,
     ownerId,
-    itemId
-  ] = getItemData(specilaId)
+    itemId,
+  ] = getItemData(value.url);
 
   return pr({
-      url: secondApiUrl + "/method/likes.delete?type=" + type + "&item_id=" + itemId + "&owner_id=" + ownerId + "&access_token=" + token + "&v=" + secondApiVersion,
-      jar: jarSecond,
-      json: true
-    })
-    .then(data => {
-      return validateLikeVk(data, specilaId, pid)
-    })
+    url: `${secondApiUrl}/method/likes.delete?type=${type}&item_id=${itemId}&owner_id=${ownerId}&access_token=${value.token}&v=${secondApiVersion}`,
+    jar: jarSecond,
+    json: true,
+  })
+    .then(data => validateLikeVk(data, value));
 }
 
-function doSkip(specilaId, pid) {
+function doSkip(value) {
   return pr({
-      url: firstUrl + "system/modules/vk_like/process.php",
-      method: "post",
-      form: {
-        step: "skip",
-        sid: pid
-      },
-      jar: jarOne
-    })
-    .then(_ => {
-      console.log(specilaId, "skip")
-      return
-    })
-}
-
-function doAction(value, done) {
-  let groupId
-  let [
-    pid,
-    specilaId,
-    token
-  ] = [...value]
-
-  console.log("\n" + specilaId, "doAction")
-
-  return pr({
-      url: firstUrl + "system/modules/vk_like/process.php",
-      method: "post",
-      form: {
-        get: 1,
-        url: specilaId,
-        pid: pid
-      },
-      jar: jarOne
-    })
-    .then(_ => doLikeVk(specilaId, token, pid))
-    .then(_ => {
-      let attempt = 0
-      return new Promise((resolve, reject) => {
-        let timer = setInterval(_ => {
-          pr({
-              url: firstUrl + "system/modules/vk_like/process.php",
-              method: "post",
-              form: {
-                id: pid
-              },
-              jar: jarOne
-            })
-            .then(data => {
-              if (attempt === 3) {
-                console.log(specilaId, "attempt over")
-                clearInterval(timer)
-                return doSkip(specilaId, pid)
-                  .then(_ => doDislikeVk(specilaId, token, pid))
-                  .then(resolve)
-              }
-              if (data.body === "1") {
-                clearInterval(timer)
-                return delay(1e3)
-                  .then(_ => doDislikeVk(specilaId, token, pid))
-                  .then(resolve)
-              }
-              attempt++
-              console.log(specilaId, "try again")
-              return
-            })
-        }, 3e3)
-      })
-    })
-    .then(_ => done(null))
-    .catch(_ => done(null))
+    url: `${firstUrl}tasks/delete/`,
+    method: 'post',
+    form: {
+      id: value.id,
+      YII_CSRF_TOKEN: value.csrf,
+    },
+    headers: {
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    jar: jarFirst,
+  })
+    .then((_) => {
+      console.log(value.id, 'skip');
+    });
 }
 
 function doStepSecond(token) {
-  console.log("\n>>> doStepSecond")
+  console.log('\n>>> doStepSecond');
 
   return pr({
-      url: firstUrl + "p.php?p=vk_like",
-      jar: jarOne
-    })
-    .then(data => {
-      const re = /ModulePopup\('(.*?)','(.*?)',.*\);/gm
-      let values = []
-      let value
+    url: `${firstUrl}p.php?p=vk_like`,
+    jar: jarFirst,
+  })
+    .then((data) => {
+      const re = /ModulePopup\('(.*?)','(.*?)',.*\);/gm;
+      const values = [];
+      let value;
       while ((value = re.exec(data.body)) !== null) {
-        values[values.length] = [value[1], value[2], token]
+        values[values.length] = [value[1], value[2], token];
       }
-      return values
-    })
+      return values;
+    });
 }
 
 function getItemData(id) {
-  let patters = id.match(/^([a-z]+)(\-?\d+)_(\d+)$/mi)
+  const patters = id.match(/^http:\/\/(m\.)?vk\.com\/([a-z]+)(-?\d+)_(\d+)$/mi);
   let [
     _,
+    mobile,
     type,
     ownerId,
-    itemId
-  ] = [...patters]
+    itemId,
+  ] = [...patters];
 
   if (type === 'wall') {
-    type = 'post'
+    type = 'post';
   }
+
   return [
     type,
     ownerId,
-    itemId
-  ]
+    itemId,
+  ];
 }
 
-pr({
-    url: firstUrl,
-    jar: jarOne
+function getCsrfToken() {
+  return pr({
+    url: `${firstUrl}login/`,
+    jar: jarFirst,
   })
-  .then(_ => {
-    return doAuthSecond()
+  .then((data) => {
+    const urlStr = data.body.match(/<input type="hidden" value="(.*?)" name="YII_CSRF_TOKEN"\/>/mi);
+    return urlStr[1];
+  });
+}
+
+function doAuthFirst(token) {
+  return pr({
+    url: `${firstUrl}login/`,
+    method: 'post',
+    form: {
+      YII_CSRF_TOKEN: token,
+      'UserLogin[login]': firstLogin,
+      'UserLogin[password]': firstPass,
+      submitLogin: 'Войти',
+    },
+    jar: jarFirst,
   })
-  .then(token => {
-    return new Promise((resolve, reject) => {
-      async.timesSeries(countCicle, (n, next) => {
-        doStepSecond(token)
-          .then(values => {
-            return new Promise((resolve, reject) => {
-              async.mapSeries(values, (value, callback) => {
-                return doAction(value, callback)
-              }, resolve)
-            })
-          })
-          .then(_ => {
-            next()
-          })
-      }, resolve)
+  .then(() => token);
+}
+
+function doCheck(value) {
+  return pr({
+    url: `${firstUrl}tasks/check/`,
+    method: 'post',
+    form: {
+      id: value.id,
+      count: 1,
+      bot_check: 1,
+      YII_CSRF_TOKEN: value.csrf,
+    },
+    headers: {
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    jar: jarFirst,
+  })
+  .then((data) => {
+    if (data.body) {
+      try {
+        const body = JSON.parse(data.body);
+        console.log(body.error);
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+  });
+}
+
+function getListTask(token) {
+  return pr({
+    url: `${firstUrl}tasks/vkontakte/like/`,
+    jar: jarFirst,
+  })
+  .then((data) => {
+    const urlStr = data.body.match(/<input type="hidden" value="(.*?)" name="YII_CSRF_TOKEN"\/>/mi);
+    const re = /<button type="button" class=".*?" data-task-id="(.*?)"/gm;
+    const values = [];
+    let value;
+    while ((value = re.exec(data.body)) !== null) {
+      values[values.length] = {
+        id: value[1],
+        token,
+        csrf: urlStr[1],
+      };
+    }
+    return values;
+  });
+}
+
+function fillLinkTask(values) {
+  return new Promise((resolve, reject) => {
+    async.mapSeries(values, (value, callback) => pr({
+      url: `${firstUrl}tasks/do/${value.id}/`,
+      followRedirect: false,
+      jar: jarFirst,
     })
-  })
-  .catch(error => {
-    console.error(error)
-    return
-  })
+      .then((data) => {
+        value.url = data.response.headers.location;
+        return callback(null, value);
+      })
+      .catch((error) => {
+        console.error(error);
+        return callback(error);
+      }), (error, values) => {
+        if (error) {
+          return reject(error);
+        }
+        return resolve(values);
+      });
+  });
+}
+
+function doAction(values) {
+  return new Promise((resolve, reject) => {
+    async.mapSeries(values, (value, callback) => delay(500)
+      .then(() => doLikeVk(value))
+      .then(() => delay(1500))
+      .then(() => doCheck(value))
+      .then(() => doDislikeVk(value))
+      .then(() => callback(null)), (error, values) => {
+        if (error) {
+          return reject(error);
+        }
+        return resolve(values);
+      });
+  });
+}
+
+getCsrfToken()
+.then(firstToken => doAuthFirst(firstToken))
+.then(() => doAuthSecond())
+.then(secondToken => new Promise((resolve, reject) => {
+  async.timesSeries(countCicle, (n, callback) => {
+    getListTask(secondToken)
+      .then(values => fillLinkTask(values))
+      .then(values => doAction(values))
+      .then(() => {
+        console.log('loop');
+        return callback(null);
+      })
+      .catch(error => callback(error));
+  }, (error, values) => {
+    if (error) {
+      return reject(error);
+    }
+    return resolve(values);
+  });
+}))
+.catch((error) => {
+  console.error(error);
+});

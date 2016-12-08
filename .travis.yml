@@ -1,0 +1,23 @@
+language: bash
+services: docker
+
+branches:
+  only:
+    - master
+
+env:
+  - ARCH=x86_64
+  - ARCH=armhf
+
+install:
+  - git clone https://github.com/lafin/smoug.git ${ARCH}/
+
+before_script:
+  - docker run --rm --privileged multiarch/qemu-user-static:register --reset
+  - sed -ie "s/FROM lafin\/alpine:platform/FROM lafin\/alpine:${ARCH}\-v3.4/" ${ARCH}/Dockerfile
+
+script:
+  - docker build -t lafin/smoug:${ARCH} ${ARCH}
+
+after_success:
+  - if [[ $TRAVIS_PULL_REQUEST == 'false' ]]; then docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD" && docker push lafin/smoug; fi
