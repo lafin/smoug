@@ -1,4 +1,5 @@
 ## smoug
+[![Build Status](https://travis-ci.org/lafin/smoug.svg?branch=master)](https://travis-ci.org/lafin/smoug)
 ___
 
 ```
