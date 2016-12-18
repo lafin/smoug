@@ -65,11 +65,18 @@ function doSkip(value) {
 }
 
 function getItemData(id) {
-    const patters = id.match(/^http:\/\/(m\.)?vk\.com\/([a-z]+)(-?\d+)_?(\d+)?$/mi);
-    let [type, ownerId, itemId] = [...patters.slice(2)];
+    let patters;
+    if (/^https?:\/\/(m\.)?vk\.com\/\w+\?w=(product)(\d+)_(\d+)/.test(id)) {
+        patters = id.match(/^https?:\/\/(m\.)?vk\.com\/\w+\?w=(product)(\d+)_(\d+)/mi);
+    } else {
+        patters = id.match(/^https?:\/\/(m\.)?vk\.com\/([a-z]+)(-?\d+)_?(\d+)?$/mi);
+    }
 
+    let [type, ownerId, itemId] = [...patters.slice(-3)];
     if (type === 'wall') {
         type = 'post';
+    } else if (type === 'product') {
+        type = 'market';
     }
 
     return [
